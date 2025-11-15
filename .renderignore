@@ -1,7 +1,8 @@
-# Render ignore file - prevent Next.js from being detected
+# Ignore Next.js files for MCP server deployment
 .next/
 out/
 app/
 components/
 public/
-
+*.tsx
+next.config.ts

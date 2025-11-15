@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: starter
     rootDir: .
-    buildCommand: npm install && echo "Skipping Next.js build - using MCP server only"
+    buildCommand: npm install
     startCommand: npm run mcp:start
     ignoreFile: .renderignore
     envVars:
