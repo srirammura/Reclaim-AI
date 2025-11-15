@@ -5,8 +5,9 @@ services:
     region: oregon
     plan: starter
     rootDir: .
-    buildCommand: npm install
+    buildCommand: npm install && echo "Skipping Next.js build - using MCP server only"
     startCommand: npm run mcp:start
+    ignoreFile: .renderignore
     envVars:
       - key: TAVILY_API_KEY
         sync: false

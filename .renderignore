@@ -1,0 +1,7 @@
+# Render ignore file - prevent Next.js from being detected
+.next/
+out/
+app/
+components/
+public/
+
