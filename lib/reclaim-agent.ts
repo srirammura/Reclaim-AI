@@ -1301,6 +1301,181 @@ export class ReclaimAgent {
     }
   }
 
+  // Analyze price drop likelihood and provide detailed reasoning
+  private async analyzePriceDropLikelihood(
+    productName: string,
+    currentPrice?: number
+  ): Promise<{
+    likelihood: "high" | "medium" | "low";
+    reasons: string[];
+    scoreAdjustment: number;
+  }> {
+    if (!this.tavilyClient) {
+      return {
+        likelihood: "medium",
+        reasons: ["Unable to analyze price trends - web search not available"],
+        scoreAdjustment: 0,
+      };
+    }
+
+    const reasons: string[] = [];
+    let likelihood: "high" | "medium" | "low" = "medium";
+    let evidencePoints = 0;
+
+    try {
+      // Search for product lifecycle information
+      const lifecycleQuery = `${productName} product lifecycle release date new version upcoming`;
+      const lifecycleResult = await this.tavilyClient.search(lifecycleQuery, {
+        searchDepth: "advanced",
+        maxResults: 5,
+      });
+
+      const lifecycleResults = Array.isArray(lifecycleResult) ? lifecycleResult : (lifecycleResult.results || []);
+      
+      for (const result of lifecycleResults) {
+        const content = (result.content || "").toLowerCase();
+        const title = (result.title || "").toLowerCase();
+        const combined = content + " " + title;
+
+        // Check for new version/upcoming release indicators
+        if (combined.match(/\b(new version|upcoming|release|refresh|model|generation|next|coming soon)\b/i)) {
+          if (!reasons.some(r => r.includes("new version"))) {
+            reasons.push("New version or refresh may be coming soon, which typically causes current model prices to drop 15-30%");
+            evidencePoints += 3;
+          }
+        }
+
+        // Check for product age indicators
+        const yearMatch = combined.match(/\b(20\d{2})\b/);
+        if (yearMatch) {
+          const mentionedYear = parseInt(yearMatch[1]);
+          const currentYear = new Date().getFullYear();
+          const age = currentYear - mentionedYear;
+          
+          if (age >= 2 && age <= 4) {
+            if (!reasons.some(r => r.includes("product age"))) {
+              reasons.push(`Product is approximately ${age} years old - nearing typical discount period as newer models approach`);
+              evidencePoints += 2;
+            }
+          } else if (age > 4) {
+            if (!reasons.some(r => r.includes("older product"))) {
+              reasons.push(`Product appears to be ${age}+ years old - likely at maximum discount, but may drop further during clearance`);
+              evidencePoints += 1;
+            }
+          }
+        }
+      }
+
+      // Search for seasonal/competitive pricing trends
+      const trendsQuery = `${productName} price drop discount sale trend competitor pricing`;
+      const trendsResult = await this.tavilyClient.search(trendsQuery, {
+        searchDepth: "advanced",
+        maxResults: 5,
+      });
+
+      const trendsResults = Array.isArray(trendsResult) ? trendsResult : (trendsResult.results || []);
+
+      for (const result of trendsResults) {
+        const content = (result.content || "").toLowerCase();
+        const title = (result.title || "").toLowerCase();
+        const combined = content + " " + title;
+
+        // Check for competitive pressure
+        if (combined.match(/\b(competitor|rival|alternative|similar product|cheaper|price war|market competition)\b/i)) {
+          if (!reasons.some(r => r.includes("competition"))) {
+            reasons.push("High competition in this product category may drive prices down as retailers compete");
+            evidencePoints += 2;
+          }
+        }
+
+        // Check for seasonal trends
+        const currentMonth = new Date().getMonth(); // 0-11
+        const monthNames = ["january", "february", "march", "april", "may", "june", 
+                           "july", "august", "september", "october", "november", "december"];
+        
+        // Black Friday / Holiday season (Oct-Dec)
+        if (currentMonth >= 9 && currentMonth <= 11) {
+          if (!reasons.some(r => r.includes("holiday"))) {
+            reasons.push(`Holiday shopping season (${monthNames[currentMonth]}) typically brings major sales - waiting 2-8 weeks may yield 20-40% discounts`);
+            evidencePoints += 4;
+          }
+        }
+        // Post-holiday clearance (Jan-Feb)
+        else if (currentMonth === 0 || currentMonth === 1) {
+          if (!reasons.some(r => r.includes("clearance"))) {
+            reasons.push(`Post-holiday clearance period (${monthNames[currentMonth]}) often has steep discounts as retailers clear inventory`);
+            evidencePoints += 3;
+          }
+        }
+        // Back-to-school / summer sales
+        else if (currentMonth >= 6 && currentMonth <= 8) {
+          if (!reasons.some(r => r.includes("summer"))) {
+            reasons.push(`Summer sales period (${monthNames[currentMonth]}) often includes promotional pricing for electronics and popular items`);
+            evidencePoints += 2;
+          }
+        }
+
+        // Check for technology/electronics specific trends
+        if (combined.match(/\b(electronics|tech|smartphone|laptop|gadget)\b/i)) {
+          if (!reasons.some(r => r.includes("tech lifecycle"))) {
+            reasons.push("Electronics typically see price drops 6-12 months after release as manufacturing costs decrease and competition increases");
+            evidencePoints += 2;
+          }
+        }
+      }
+
+      // Search for price history and patterns
+      if (currentPrice) {
+        const priceHistoryQuery = `${productName} price history chart lowest price best deal`;
+        try {
+          const priceResult = await this.tavilyClient.search(priceHistoryQuery, {
+            searchDepth: "advanced",
+            maxResults: 3,
+          });
+
+          const priceResults = Array.isArray(priceResult) ? priceResult : (priceResult.results || []);
+
+          for (const result of priceResults) {
+            const content = (result.content || "").toLowerCase();
+            if (content.match(/\b(lowest|best price|price drop|discount|sale|clearance)\b/i)) {
+              if (!reasons.some(r => r.includes("price history"))) {
+                reasons.push("Price tracking suggests this product has had significant discounts in the past - current price may not be optimal");
+                evidencePoints += 2;
+              }
+            }
+          }
+        } catch (err) {
+          // Continue without price history
+        }
+      }
+
+      // Determine likelihood based on evidence points
+      if (evidencePoints >= 7) {
+        likelihood = "high";
+      } else if (evidencePoints >= 4) {
+        likelihood = "medium";
+      } else {
+        likelihood = "low";
+      }
+
+      // Add default reasoning if no specific reasons found
+      if (reasons.length === 0) {
+        reasons.push("Standard market dynamics suggest prices may fluctuate, but no strong indicators of imminent price drops");
+        reasons.push("Consider setting up price alerts if you're interested in this product");
+      }
+
+    } catch (err: any) {
+      console.warn("Error analyzing price drop likelihood:", err);
+      reasons.push("Unable to complete detailed price trend analysis - web search encountered an error");
+    }
+
+    return {
+      likelihood,
+      reasons,
+      scoreAdjustment: 0, // Score adjustment handled in generateRecommendation
+    };
+  }
+
   private async generateRecommendation(
     productInfo: any,
     manipulationSignals: string[],
@@ -1309,17 +1484,73 @@ export class ReclaimAgent {
     userPrefs: UserPreferences,
     productName: string
   ): Promise<ProductAnalysis["recommendation"]> {
-    let score = 50; // Neutral starting point
+    let score = 50.0; // Neutral starting point (precise decimal)
     const reasoningParts: string[] = [];
     const scoreBreakdown: string[] = [];
+    
+    // Analyze price drop likelihood and reasons
+    let priceDropAnalysis: {
+      likelihood: "high" | "medium" | "low";
+      reasons: string[];
+      scoreAdjustment: number;
+    } = {
+      likelihood: "medium",
+      reasons: [],
+      scoreAdjustment: 0,
+    };
 
-    // Build detailed reasoning for manipulation signals
+    // Analyze price drop likelihood using Tavily if available
+    if (this.tavilyClient && productName) {
+      try {
+        priceDropAnalysis = await this.analyzePriceDropLikelihood(productName, productInfo.price);
+        
+        // Adjust score based on price drop likelihood
+        if (priceDropAnalysis.likelihood === "high") {
+          score += 8.5; // More precise: suggest waiting
+          scoreBreakdown.push(`+8.5 points: High likelihood of price drop (see analysis below)`);
+        } else if (priceDropAnalysis.likelihood === "medium") {
+          score += 4.2; // Moderate suggestion to wait
+          scoreBreakdown.push(`+4.2 points: Moderate likelihood of price drop`);
+        } else {
+          score += 1.5; // Low likelihood, minimal adjustment
+          scoreBreakdown.push(`+1.5 points: Low likelihood of price drop`);
+        }
+      } catch (err) {
+        console.warn("Failed to analyze price drop likelihood:", err);
+        // Continue without price drop analysis
+      }
+    }
+
+    // Build detailed reasoning for manipulation signals (with precise deductions)
     if (manipulationClaims.length > 0) {
-      const deduction = manipulationClaims.length * 15;
-      score -= deduction;
+      // More precise scoring: base deduction per claim, with severity adjustments
+      let totalDeduction = 0;
       
-      reasoningParts.push(`\n🚨 MARKETING CLAIMS DETECTED (${deduction} points deducted):`);
-      scoreBreakdown.push(`-${deduction} points: ${manipulationClaims.length} marketing claim(s) detected`);
+      for (const claim of manipulationClaims) {
+        let claimDeduction = 14.5; // Base deduction per claim
+        
+        // Adjust based on claim type severity
+        if (claim.type === "Urgency/scarcity pressure") {
+          claimDeduction += 2.3; // More severe
+        } else if (claim.type === "Price manipulation tactics") {
+          claimDeduction += 1.8; // Moderately severe
+        } else if (claim.type === "Fake exclusivity claims") {
+          claimDeduction += 1.5;
+        }
+        
+        // Additional deduction if claim is verified as false/misleading
+        if (claim.verified === false || claim.verificationEvidence?.includes("misleading")) {
+          claimDeduction += 3.2; // Extra penalty for verified false claims
+        }
+        
+        totalDeduction += claimDeduction;
+      }
+      
+      score -= totalDeduction;
+      
+      const roundedDeduction = Math.round(totalDeduction * 10) / 10;
+      reasoningParts.push(`\n🚨 MARKETING CLAIMS DETECTED (${roundedDeduction.toFixed(1)} points deducted):`);
+      scoreBreakdown.push(`-${roundedDeduction.toFixed(1)} points: ${manipulationClaims.length} marketing claim(s) detected with severity analysis`);
 
       for (const claim of manipulationClaims) {
         reasoningParts.push(`\n  • "${claim.foundText}" - ${claim.type}`);
@@ -1335,29 +1566,78 @@ export class ReclaimAgent {
       }
     }
 
-    // Build reasoning for alternatives
+    // Build reasoning for alternatives (with precise scoring)
     if (alternatives.length > 0) {
-      const deduction = 10 * alternatives.length;
+      // Calculate average savings to adjust deduction
+      const avgSavings = alternatives
+        .filter(alt => alt.savings && alt.savings > 0)
+        .reduce((sum, alt) => sum + (alt.savings || 0), 0) / alternatives.length || 0;
+      
+      // More precise: base deduction + percentage based on savings
+      let deduction = 9.5 * alternatives.length; // Base deduction per alternative
+      
+      // Additional deduction based on savings percentage
+      if (productInfo.price && avgSavings > 0) {
+        const savingsPercent = (avgSavings / productInfo.price) * 100;
+        if (savingsPercent > 30) {
+          deduction += 3.5 * alternatives.length; // High savings = more deduction
+        } else if (savingsPercent > 15) {
+          deduction += 1.8 * alternatives.length; // Medium savings
+        }
+      }
+      
       score -= deduction;
-      reasoningParts.push(`\n💰 CHEAPER ALTERNATIVES FOUND (${deduction} points deducted):`);
-      scoreBreakdown.push(`-${deduction} points: ${alternatives.length} cheaper alternative(s) available`);
+      const roundedDeduction = Math.round(deduction * 10) / 10;
+      reasoningParts.push(`\n💰 CHEAPER ALTERNATIVES FOUND (${roundedDeduction.toFixed(1)} points deducted):`);
+      scoreBreakdown.push(`-${roundedDeduction.toFixed(1)} points: ${alternatives.length} cheaper alternative(s) available${avgSavings > 0 ? ` (avg savings: $${avgSavings.toFixed(2)})` : ''}`);
       reasoningParts.push(`  Found ${alternatives.length} cheaper or similar options that could save you money.`);
+      
+      // Show top alternatives
+      const topAlternatives = alternatives.slice(0, 3);
+      for (const alt of topAlternatives) {
+        if (alt.savings && alt.savings > 0) {
+          reasoningParts.push(`    - ${alt.description}: Save $${alt.savings.toFixed(2)} (${((alt.savings / (productInfo.price || 1)) * 100).toFixed(1)}% off)`);
+        }
+      }
     }
 
-    // Build reasoning for budget
+    // Build reasoning for budget (with precise scoring)
     if (
       userPrefs.budgetRange &&
       productInfo.price &&
       productInfo.price > userPrefs.budgetRange.max
     ) {
-      score -= 20;
-      reasoningParts.push(`\n💸 OVER BUDGET (20 points deducted):`);
-      scoreBreakdown.push(`-20 points: Price ($${productInfo.price}) exceeds your budget ($${userPrefs.budgetRange.max})`);
-      reasoningParts.push(`  This product costs $${productInfo.price}, which exceeds your budget of $${userPrefs.budgetRange.max}.`);
+      const overage = productInfo.price - userPrefs.budgetRange.max;
+      const overagePercent = (overage / userPrefs.budgetRange.max) * 100;
+      
+      // More precise: deduction scales with how much over budget
+      let deduction = 18.5; // Base deduction
+      if (overagePercent > 50) {
+        deduction += 4.5; // Very over budget
+      } else if (overagePercent > 25) {
+        deduction += 2.3; // Moderately over budget
+      }
+      
+      score -= deduction;
+      const roundedDeduction = Math.round(deduction * 10) / 10;
+      reasoningParts.push(`\n💸 OVER BUDGET (${roundedDeduction.toFixed(1)} points deducted):`);
+      scoreBreakdown.push(`-${roundedDeduction.toFixed(1)} points: Price ($${productInfo.price.toFixed(2)}) exceeds your budget ($${userPrefs.budgetRange.max}) by $${overage.toFixed(2)} (${overagePercent.toFixed(1)}%)`);
+      reasoningParts.push(`  This product costs $${productInfo.price.toFixed(2)}, which exceeds your budget of $${userPrefs.budgetRange.max} by $${overage.toFixed(2)}.`);
     }
 
-    // Clamp score
-    score = Math.max(0, Math.min(100, score));
+    // Add price drop analysis to reasoning
+    if (priceDropAnalysis.reasons.length > 0) {
+      reasoningParts.push(`\n📉 PRICE DROP ANALYSIS (${priceDropAnalysis.likelihood.toUpperCase()} likelihood):`);
+      
+      for (const reason of priceDropAnalysis.reasons) {
+        reasoningParts.push(`  • ${reason}`);
+      }
+      
+      reasoningParts.push(`\n  💡 RECOMMENDATION: ${priceDropAnalysis.likelihood === "high" ? "Consider waiting - prices are likely to drop soon due to the factors above." : priceDropAnalysis.likelihood === "medium" ? "Prices may drop in the near future. Consider waiting if you're not in urgent need." : "Price stability is expected, though minor discounts may occur."}`);
+    }
+
+    // Clamp score to 2 decimal places
+    score = Math.max(0.0, Math.min(100.0, Math.round(score * 100) / 100));
 
     // Determine verdict and build final reasoning
     let verdict: "buy" | "wait" | "avoid" | "find-alternative" = "buy";
@@ -1377,19 +1657,22 @@ export class ReclaimAgent {
       summaryReasoning = "✅ REASONABLE PURCHASE (but still consider if necessary)";
     }
 
-    // Build complete reasoning
+    // Build complete reasoning with precise score
+    const preciseScore = score.toFixed(2);
     const detailedReasoning = `
-📊 SCORE BREAKDOWN: ${score}/100
-${scoreBreakdown.length > 0 ? scoreBreakdown.join('\n') : 'No deductions applied'}
+📊 SCORE BREAKDOWN: ${preciseScore}/100
+${scoreBreakdown.length > 0 ? scoreBreakdown.join('\n') : 'No adjustments applied'}
 
 ${reasoningParts.join('\n')}
 
 ${summaryReasoning}
-Final Score: ${score}/100
-${score < 30 ? 'Multiple red flags detected. This product shows significant manipulation tactics that suggest it may not be a good purchase.' : ''}
-${score >= 30 && score < 50 ? 'Better alternatives are available. Consider the options above before making this purchase.' : ''}
-${score >= 50 && score < 70 ? 'This purchase is not urgent. Take time to think and you might find better options or price drops.' : ''}
-${score >= 70 ? 'This appears reasonable, but always consider: Do you really need this? Could you borrow, rent, or find it used?' : ''}
+
+📈 FINAL ASSESSMENT:
+Final Score: ${preciseScore}/100
+${score < 30 ? '🚨 MULTIPLE RED FLAGS DETECTED: This product shows significant manipulation tactics, better alternatives exist, and waiting may save you money. Strong recommendation to avoid or find alternatives.' : ''}
+${score >= 30 && score < 50 ? '⚠️ HIGH RISK PURCHASE: Better alternatives are available, and price drops are likely. Consider waiting or choosing an alternative to save money.' : ''}
+${score >= 50 && score < 70 ? '🤔 MODERATE RISK: This purchase is not urgent. Price analysis suggests waiting may benefit you. Take time to consider alternatives and potential price drops.' : ''}
+${score >= 70 ? '✅ REASONABLE PURCHASE: This appears reasonable, but always consider: Do you really need this? Could you borrow, rent, or find it used? Even with a good score, mindful purchasing practices apply.' : ''}
     `.trim();
 
     return {
