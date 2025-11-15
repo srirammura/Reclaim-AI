@@ -4,23 +4,18 @@ services:
     env: node
     region: oregon
     plan: starter
+    rootDir: .
     buildCommand: npm install && npm run agent:build
     startCommand: npm run mcp:start
-    rootDir: .
     envVars:
-      # Required: Tavily API Key - Set actual value in Render dashboard
       - key: TAVILY_API_KEY
         sync: false
-      # Optional: Redis LangCache - Set actual values in Render dashboard
       - key: REDIS_LANGCACHE_HOST
         sync: false
       - key: REDIS_LANGCACHE_API_KEY
         sync: false
       - key: REDIS_LANGCACHE_ID
         sync: false
-      # Server config
       - key: PORT
         value: 3000
-      - key: NODE_ENV
-        value: production
     healthCheckPath: /health
