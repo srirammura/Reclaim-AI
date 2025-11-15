@@ -1,0 +1,15 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "env": {
+    "TAVILY_API_KEY": "@tavily_api_key",
+    "REDIS_LANGCACHE_HOST": "@redis_langcache_host",
+    "REDIS_LANGCACHE_API_KEY": "@redis_langcache_api_key",
+    "REDIS_LANGCACHE_ID": "@redis_langcache_id",
+    "NEXT_PUBLIC_COPILOTKIT_PUBLIC_API_KEY": "@copilotkit_public_api_key"
+  }
+}
+

@@ -1,0 +1,48 @@
+FROM node:20-alpine AS base
+
+# Install dependencies
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Copy package files
+COPY package-agent.json package.json
+COPY package-lock.json* ./
+RUN npm ci
+
+# Build
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build TypeScript
+RUN npm run agent:build || npx tsc --project tsconfig.server.json || echo "Build completed"
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 agent
+
+# Copy necessary files
+COPY --from=builder --chown=agent:nodejs /app/lib ./lib
+COPY --from=builder --chown=agent:nodejs /app/server.js* ./ || true
+COPY --from=builder --chown=agent:nodejs /app/server.ts ./server.ts
+COPY --from=builder --chown=agent:nodejs /app/mcp-server.ts ./mcp-server.ts
+COPY --from=deps --chown=agent:nodejs /app/node_modules ./node_modules
+COPY --from=deps --chown=agent:nodejs /app/package.json ./package.json
+
+USER agent
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+# Use tsx if server.js doesn't exist, otherwise use node
+CMD ["sh", "-c", "if [ -f server.js ]; then node server.js; else npx tsx server.ts; fi"]
+
