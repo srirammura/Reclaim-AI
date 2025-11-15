@@ -1484,7 +1484,7 @@ export class ReclaimAgent {
     userPrefs: UserPreferences,
     productName: string
   ): Promise<ProductAnalysis["recommendation"]> {
-    let score = 50.0; // Neutral starting point (precise decimal)
+    let score = 75.0; // Start with a positive score (higher = better to buy) - assume it's reasonable unless proven otherwise
     const reasoningParts: string[] = [];
     const scoreBreakdown: string[] = [];
     
@@ -1504,20 +1504,20 @@ export class ReclaimAgent {
       try {
         priceDropAnalysis = await this.analyzePriceDropLikelihood(productName, productInfo.price);
         
-        // Adjust score based on price drop likelihood
+        // Adjust score based on price drop likelihood (reduces score to suggest waiting)
         if (priceDropAnalysis.likelihood === "high") {
-          score += 8.5; // More precise: suggest waiting
-          scoreBreakdown.push(`+8.5 points: High likelihood of price drop (see analysis below)`);
+          score -= 12.5; // More precise: suggest waiting if high likelihood of price drop
+          scoreBreakdown.push(`-12.5 points: High likelihood of price drop (see analysis below)`);
         } else if (priceDropAnalysis.likelihood === "medium") {
-          score += 4.2; // Moderate suggestion to wait
-          scoreBreakdown.push(`+4.2 points: Moderate likelihood of price drop`);
+          score -= 6.3; // Moderate suggestion to wait
+          scoreBreakdown.push(`-6.3 points: Moderate likelihood of price drop`);
         } else {
-          score += 1.5; // Low likelihood, minimal adjustment
-          scoreBreakdown.push(`+1.5 points: Low likelihood of price drop`);
+          // Low likelihood - no adjustment needed, product is likely at good price
+          scoreBreakdown.push(`+0 points: Low likelihood of price drop - current price appears stable`);
         }
       } catch (err) {
         console.warn("Failed to analyze price drop likelihood:", err);
-        // Continue without price drop analysis
+        // Continue without price drop analysis - assume neutral
       }
     }
 
@@ -1636,10 +1636,54 @@ export class ReclaimAgent {
       reasoningParts.push(`\n  💡 RECOMMENDATION: ${priceDropAnalysis.likelihood === "high" ? "Consider waiting - prices are likely to drop soon due to the factors above." : priceDropAnalysis.likelihood === "medium" ? "Prices may drop in the near future. Consider waiting if you're not in urgent need." : "Price stability is expected, though minor discounts may occur."}`);
     }
 
+    // Add positive points for clean products (no manipulation, good indicators)
+    let positiveFactors = 0;
+    
+    if (manipulationClaims.length === 0) {
+      // No manipulation detected - this is good!
+      const bonus = 5.0;
+      score += bonus;
+      positiveFactors++;
+      scoreBreakdown.push(`+${bonus.toFixed(1)} points: No marketing manipulation tactics detected`);
+      reasoningParts.push(`\n✅ CLEAN PRODUCT INDICATORS:`);
+      reasoningParts.push(`  • No urgency/scarcity pressure detected`);
+      reasoningParts.push(`  • No fake exclusivity claims found`);
+      reasoningParts.push(`  • No aggressive impulse triggers identified`);
+      reasoningParts.push(`  • Marketing appears straightforward and honest`);
+    }
+    
+    if (alternatives.length === 0) {
+      // No cheaper alternatives found - this suggests it's a good price
+      const bonus = 3.5;
+      score += bonus;
+      positiveFactors++;
+      scoreBreakdown.push(`+${bonus.toFixed(1)} points: No cheaper alternatives found - current price appears competitive`);
+      reasoningParts.push(`\n💰 PRICE COMPETITIVENESS:`);
+      reasoningParts.push(`  • No cheaper alternatives detected in the market`);
+      reasoningParts.push(`  • Current price appears competitive`);
+    }
+    
+    if (userPrefs.budgetRange && productInfo.price && productInfo.price <= userPrefs.budgetRange.max) {
+      // Within budget - positive indicator
+      const bonus = 4.0;
+      score += bonus;
+      positiveFactors++;
+      const remainingBudget = userPrefs.budgetRange.max - productInfo.price;
+      scoreBreakdown.push(`+${bonus.toFixed(1)} points: Within your budget ($${remainingBudget.toFixed(2)} remaining)`);
+      reasoningParts.push(`\n✅ WITHIN BUDGET:`);
+      reasoningParts.push(`  • Price ($${productInfo.price.toFixed(2)}) is within your budget ($${userPrefs.budgetRange.max})`);
+      reasoningParts.push(`  • You have $${remainingBudget.toFixed(2)} remaining in your budget`);
+    }
+    
+    if (positiveFactors >= 3) {
+      reasoningParts.push(`\n✅ MULTIPLE POSITIVE INDICATORS: This product shows good signs - honest marketing, competitive pricing, and fits your budget.`);
+    }
+
     // Clamp score to 2 decimal places
     score = Math.max(0.0, Math.min(100.0, Math.round(score * 100) / 100));
 
     // Determine verdict and build final reasoning
+    // Adjusted thresholds: Higher scores = better to buy, but we're more lenient now
     let verdict: "buy" | "wait" | "avoid" | "find-alternative" = "buy";
     let summaryReasoning = "";
 
@@ -1649,12 +1693,17 @@ export class ReclaimAgent {
     } else if (score < 50) {
       verdict = "find-alternative";
       summaryReasoning = "⚠️ CONSIDER ALTERNATIVES";
-    } else if (score < 70) {
+    } else if (score < 75) {
       verdict = "wait";
-      summaryReasoning = "⏳ WAIT AND CONSIDER";
+      summaryReasoning = "⏳ CONSIDER WAITING - Some concerns detected";
     } else {
+      // Score >= 75: Good to buy
       verdict = "buy";
-      summaryReasoning = "✅ REASONABLE PURCHASE (but still consider if necessary)";
+      if (score >= 85) {
+        summaryReasoning = "✅ EXCELLENT PURCHASE - Strong recommendation to buy";
+      } else {
+        summaryReasoning = "✅ GOOD PURCHASE - Reasonable to buy";
+      }
     }
 
     // Build complete reasoning with precise score
@@ -1671,8 +1720,9 @@ ${summaryReasoning}
 Final Score: ${preciseScore}/100
 ${score < 30 ? '🚨 MULTIPLE RED FLAGS DETECTED: This product shows significant manipulation tactics, better alternatives exist, and waiting may save you money. Strong recommendation to avoid or find alternatives.' : ''}
 ${score >= 30 && score < 50 ? '⚠️ HIGH RISK PURCHASE: Better alternatives are available, and price drops are likely. Consider waiting or choosing an alternative to save money.' : ''}
-${score >= 50 && score < 70 ? '🤔 MODERATE RISK: This purchase is not urgent. Price analysis suggests waiting may benefit you. Take time to consider alternatives and potential price drops.' : ''}
-${score >= 70 ? '✅ REASONABLE PURCHASE: This appears reasonable, but always consider: Do you really need this? Could you borrow, rent, or find it used? Even with a good score, mindful purchasing practices apply.' : ''}
+${score >= 50 && score < 75 ? '🤔 MODERATE CONCERNS: Some concerns detected. Take time to consider alternatives and potential price drops. Not urgent - waiting may benefit you.' : ''}
+${score >= 75 && score < 85 ? '✅ GOOD PURCHASE: No major red flags detected. This appears to be a reasonable purchase. As always, consider if you really need it, but there\'s no strong reason to avoid or wait.' : ''}
+${score >= 85 ? '✅ EXCELLENT PURCHASE: Clean product with honest marketing, competitive pricing, and no major concerns. Strong recommendation to proceed with purchase if you need this item.' : ''}
     `.trim();
 
     return {
