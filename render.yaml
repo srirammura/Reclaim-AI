@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: starter
     rootDir: .
-    buildCommand: npm install && npm run agent:build
+    buildCommand: npm install
     startCommand: npm run mcp:start
     envVars:
       - key: TAVILY_API_KEY

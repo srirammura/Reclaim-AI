@@ -40,7 +40,7 @@ async function mcpClientExample() {
   });
 
   console.log("\n=== Analysis Result ===");
-  console.log(result.content?.[0]?.text);
+  console.log((result.content?.[0] as any)?.text || JSON.stringify(result, null, 2));
 
   // Call search_alternatives tool
   const alternatives = await client.callTool({
