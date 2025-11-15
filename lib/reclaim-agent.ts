@@ -103,18 +103,30 @@ export class ReclaimAgent {
       console.log("✅ Redis LangCache connection configured");
     } else if (redisHost || redisUrl) {
       // Standard Redis connection if host/URL provided
-      this.redis = new Redis(redisUrl || {
-        host: redisHost || "localhost",
-        port: parseInt(process.env.REDIS_PORT || "6379"),
-        password: process.env.REDIS_PASSWORD || undefined,
-        retryStrategy: (times) => {
-          const delay = Math.min(times * 50, 2000);
-          return delay;
-        },
-        lazyConnect: true,
-        maxRetriesPerRequest: 3,
-        enableOfflineQueue: false,
-      });
+      if (redisUrl) {
+        this.redis = new Redis(redisUrl, {
+          retryStrategy: (times: number) => {
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+          },
+          lazyConnect: true,
+          maxRetriesPerRequest: 3,
+          enableOfflineQueue: false,
+        });
+      } else {
+        this.redis = new Redis({
+          host: redisHost || "localhost",
+          port: parseInt(process.env.REDIS_PORT || "6379"),
+          password: process.env.REDIS_PASSWORD || undefined,
+          retryStrategy: (times: number) => {
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+          },
+          lazyConnect: true,
+          maxRetriesPerRequest: 3,
+          enableOfflineQueue: false,
+        });
+      }
     } else {
       // No Redis configuration - create a dummy client that will gracefully fail
       // This allows the app to work without Redis
