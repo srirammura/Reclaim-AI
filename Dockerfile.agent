@@ -33,6 +33,8 @@ COPY --from=builder --chown=agent:nodejs /app/lib ./lib
 COPY --from=builder --chown=agent:nodejs /app/server.js* ./ || true
 COPY --from=builder --chown=agent:nodejs /app/server.ts ./server.ts
 COPY --from=builder --chown=agent:nodejs /app/mcp-server.ts ./mcp-server.ts
+COPY --from=builder --chown=agent:nodejs /app/mcp-server-http.js* ./ || true
+COPY --from=builder --chown=agent:nodejs /app/mcp-server-http.ts ./mcp-server-http.ts
 COPY --from=deps --chown=agent:nodejs /app/node_modules ./node_modules
 COPY --from=deps --chown=agent:nodejs /app/package.json ./package.json
 
@@ -43,6 +45,6 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Use tsx if server.js doesn't exist, otherwise use node
-CMD ["sh", "-c", "if [ -f server.js ]; then node server.js; else npx tsx server.ts; fi"]
+# Use MCP HTTP server for deployment
+CMD ["sh", "-c", "if [ -f mcp-server-http.js ]; then node mcp-server-http.js; else npx tsx mcp-server-http.ts; fi"]
 

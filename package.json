@@ -9,6 +9,8 @@
     "agent:dev": "tsx server.ts",
     "agent:build": "tsc --project tsconfig.server.json",
     "agent:start": "node server.js || tsx server.ts",
+    "mcp:dev": "tsx mcp-server-http.ts",
+    "mcp:start": "node mcp-server-http.js || tsx mcp-server-http.ts",
     "lint": "eslint",
     "mcp:server": "node --loader ts-node/esm mcp-server.ts",
     "example:basic": "tsx examples/basic-usage.ts",
