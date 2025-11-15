@@ -264,6 +264,35 @@ app.post("/mcp/tools/call", async (req, res) => {
 
     // Handle async analyze_product (default behavior to avoid timeouts)
     if (name === "analyze_product") {
+      // Check cache first (semantic caching)
+      try {
+        const cachedAnalysis = await (tool as any).checkCachedAnalysis(args.url);
+        if (cachedAnalysis) {
+          // Add cache metadata
+          cachedAnalysis.metadata = {
+            ...(cachedAnalysis.metadata || {}),
+            cached: true,
+            cacheHit: true,
+            servedFromCache: true,
+          };
+          
+          console.log(`✅ [CACHE] Returning cached analysis for ${args.url} (semantic match)`);
+          
+          // Return cached result immediately in MCP format
+          return res.json({
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(cachedAnalysis, null, 2),
+              },
+            ],
+          });
+        }
+      } catch (cacheErr: any) {
+        console.warn("⚠️ [CACHE] Cache check failed, proceeding with fresh analysis:", cacheErr.message);
+        // Continue with fresh analysis if cache check fails
+      }
+
       // Default to async unless explicitly set to false
       const useAsync = args?.async !== false;
       
@@ -498,6 +527,28 @@ app.post("/api/tool", async (req, res) => {
     if (action === "analyze") {
       if (!params.url) {
         return res.status(400).json({ error: "url is required" });
+      }
+      
+      // Check cache first (semantic caching)
+      try {
+        const cachedAnalysis = await (tool as any).checkCachedAnalysis(params.url);
+        if (cachedAnalysis) {
+          // Add cache metadata
+          cachedAnalysis.metadata = {
+            ...(cachedAnalysis.metadata || {}),
+            cached: true,
+            cacheHit: true,
+            servedFromCache: true,
+          };
+          
+          console.log(`✅ [CACHE] Returning cached analysis for ${params.url} (semantic match)`);
+          
+          // Return cached result immediately
+          return res.json(cachedAnalysis);
+        }
+      } catch (cacheErr: any) {
+        console.warn("⚠️ [CACHE] Cache check failed, proceeding with fresh analysis:", cacheErr.message);
+        // Continue with fresh analysis if cache check fails
       }
       
       // Use async by default to avoid timeouts

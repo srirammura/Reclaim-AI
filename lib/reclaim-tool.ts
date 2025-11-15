@@ -46,6 +46,51 @@ export class ReclaimTool {
   }
 
   /**
+   * Check if analysis is cached (semantic search)
+   * @param url - Product URL to check
+   * @returns Cached analysis if found, null otherwise
+   */
+  async checkCachedAnalysis(url: string): Promise<any | null> {
+    // Access the agent's LangCache directly
+    const agent = this.agent as any;
+    
+    if (!agent.langCache) {
+      return null;
+    }
+
+    try {
+      const cacheResult = await agent.langCache.search({
+        prompt: `Analyze product: ${url}`,
+        similarityThreshold: 0.85, // High threshold for similar URLs
+      });
+
+      // Handle LangCache response - it may be an array or object
+      const cacheArray = Array.isArray(cacheResult) 
+        ? cacheResult 
+        : (cacheResult && typeof cacheResult === 'object' && 'results' in cacheResult 
+          ? (cacheResult as any).results 
+          : []);
+
+      if (cacheArray.length > 0 && cacheArray[0]?.response) {
+        try {
+          const cachedAnalysis = JSON.parse(cacheArray[0].response);
+          // Verify it's a valid analysis result
+          if (cachedAnalysis && cachedAnalysis.url && cachedAnalysis.recommendation) {
+            console.log(`✅ [CACHE] Found cached analysis for ${url}`);
+            return cachedAnalysis;
+          }
+        } catch (parseErr) {
+          // Invalid cache, continue
+        }
+      }
+    } catch (err: any) {
+      console.warn("⚠️ [CACHE] LangCache search error:", err.message);
+    }
+
+    return null;
+  }
+
+  /**
    * Get product metadata (title, price, description)
    * @param url - Product URL
    * @returns Product metadata

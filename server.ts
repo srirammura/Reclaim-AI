@@ -115,6 +115,28 @@ app.post("/api/tool", async (req, res) => {
           return res.status(400).json({ error: "url is required" });
         }
         
+        // Check cache first (semantic caching)
+        try {
+          const cachedAnalysis = await (tool as any).checkCachedAnalysis(params.url);
+          if (cachedAnalysis) {
+            // Add cache metadata
+            cachedAnalysis.metadata = {
+              ...(cachedAnalysis.metadata || {}),
+              cached: true,
+              cacheHit: true,
+              servedFromCache: true,
+            };
+            
+            console.log(`✅ [CACHE] Returning cached analysis for ${params.url} (semantic match)`);
+            
+            // Return cached result immediately
+            return res.json(cachedAnalysis);
+          }
+        } catch (cacheErr: any) {
+          console.warn("⚠️ [CACHE] Cache check failed, proceeding with fresh analysis:", cacheErr.message);
+          // Continue with fresh analysis if cache check fails
+        }
+        
         // Use async processing by default to avoid timeouts
         if (useAsync !== false) {
           const jobId = generateJobId();
