@@ -18,6 +18,9 @@ export interface ReclaimToolConfig {
 
 export class ReclaimTool {
   private agent: ReclaimAgent;
+  // In-memory cache for instant results (exact URL matches)
+  private memoryCache: Map<string, { result: any; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
   constructor(config?: ReclaimToolConfig) {
     // Set environment variables from config if provided
@@ -46,12 +49,25 @@ export class ReclaimTool {
   }
 
   /**
-   * Check if analysis is cached (semantic search)
+   * Check if analysis is cached (in-memory first, then semantic search)
    * @param url - Product URL to check
    * @returns Cached analysis if found, null otherwise
    */
   async checkCachedAnalysis(url: string): Promise<any | null> {
-    // Access the agent's LangCache directly
+    // 1. Check in-memory cache first (instant - exact URL match)
+    const cached = this.memoryCache.get(url);
+    if (cached) {
+      const age = Date.now() - cached.timestamp;
+      if (age < this.CACHE_TTL) {
+        console.log(`⚡ [MEMORY CACHE] Instant hit for ${url} (${Math.round(age / 1000)}s old)`);
+        return cached.result;
+      } else {
+        // Expired - remove from memory
+        this.memoryCache.delete(url);
+      }
+    }
+
+    // 2. Check LangCache (semantic search - 1-2 seconds)
     const agent = this.agent as any;
     
     if (!agent.langCache) {
@@ -76,7 +92,14 @@ export class ReclaimTool {
           const cachedAnalysis = JSON.parse(cacheArray[0].response);
           // Verify it's a valid analysis result
           if (cachedAnalysis && cachedAnalysis.url && cachedAnalysis.recommendation) {
-            console.log(`✅ [CACHE] Found cached analysis for ${url}`);
+            console.log(`✅ [LANGCA CHE] Semantic cache hit for ${url}`);
+            
+            // Store in memory cache for next time (instant)
+            this.memoryCache.set(url, {
+              result: cachedAnalysis,
+              timestamp: Date.now(),
+            });
+            
             return cachedAnalysis;
           }
         } catch (parseErr) {
@@ -88,6 +111,27 @@ export class ReclaimTool {
     }
 
     return null;
+  }
+
+  /**
+   * Store analysis in memory cache for instant future access
+   * @param url - Product URL
+   * @param analysis - Analysis result to cache
+   */
+  storeInMemoryCache(url: string, analysis: any): void {
+    this.memoryCache.set(url, {
+      result: analysis,
+      timestamp: Date.now(),
+    });
+    
+    // Cleanup old entries (older than TTL)
+    for (const [key, value] of this.memoryCache.entries()) {
+      if (Date.now() - value.timestamp > this.CACHE_TTL) {
+        this.memoryCache.delete(key);
+      }
+    }
+    
+    console.log(`💾 [MEMORY CACHE] Stored analysis for ${url} (${this.memoryCache.size} items in cache)`);
   }
 
   /**

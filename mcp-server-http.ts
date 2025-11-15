@@ -316,6 +316,10 @@ app.post("/mcp/tools/call", async (req, res) => {
             
             job.status = "completed";
             job.result = analysis;
+            
+            // Store in memory cache for instant future access
+            (tool as any).storeInMemoryCache(args.url, analysis);
+            
             console.log(`[Job ${jobId}] MCP analysis completed`);
           } catch (error: any) {
             job.status = "failed";
@@ -343,6 +347,10 @@ app.post("/mcp/tools/call", async (req, res) => {
         // Synchronous (may timeout on Render - not recommended)
         try {
           const analysis = await tool.analyzeProduct(args.url, args.userId);
+          
+          // Store in memory cache
+          (tool as any).storeInMemoryCache(args.url, analysis);
+          
           return res.json({
             content: [
               {
@@ -569,6 +577,9 @@ app.post("/api/tool", async (req, res) => {
             const analysis = await tool.analyzeProduct(params.url, params.userId);
             job.status = "completed";
             job.result = analysis;
+            
+            // Store in memory cache for instant future access
+            (tool as any).storeInMemoryCache(params.url, analysis);
           } catch (error: any) {
             job.status = "failed";
             job.error = error.message || "Analysis failed";
@@ -584,6 +595,10 @@ app.post("/api/tool", async (req, res) => {
       } else {
         // Synchronous (may timeout)
         const analysis = await tool.analyzeProduct(params.url, params.userId);
+        
+        // Store in memory cache
+        (tool as any).storeInMemoryCache(params.url, analysis);
+        
         return res.json(analysis);
       }
     }

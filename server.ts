@@ -158,6 +158,10 @@ app.post("/api/tool", async (req, res) => {
               
               job.status = "completed";
               job.result = analysis;
+              
+              // Store in memory cache for instant future access
+              (tool as any).storeInMemoryCache(params.url, analysis);
+              
               console.log(`[Job ${jobId}] Analysis completed`);
             } catch (error: any) {
               job.status = "failed";
@@ -177,6 +181,10 @@ app.post("/api/tool", async (req, res) => {
         } else {
           // Synchronous (may timeout on long analyses)
           const analysis = await tool.analyzeProduct(params.url, params.userId);
+          
+          // Store in memory cache
+          (tool as any).storeInMemoryCache(params.url, analysis);
+          
           return res.json(analysis);
         }
 
